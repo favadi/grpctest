@@ -57,50 +57,50 @@ func main() {
 		return metautils.NiceMD(md).ToOutgoing(ctx)
 	}
 
-	client := grpctest.NewGrpcTestClient(clientConn)
+	var (
+		ctx      context.Context
+		cancel   context.CancelFunc
+		client   = grpctest.NewGrpcTestClient(clientConn)
+		respChan = make(chan *grpctest.Response, 1)
+	)
+
 	for {
-		stream, err := client.BiDirectionalStream(contextWithToken(context.Background()))
+		log.Debug("Connect to gRPC server")
+		ctx, cancel = context.WithCancel(context.Background())
+		stream, err := client.BiDirectionalStream(contextWithToken(ctx))
 		if err != nil {
 			log.Error("Can't open stream, try again", zap.Error(err))
 			time.Sleep(common.ReconnectInterval)
 			continue
 		}
-
-		respChan := make(chan *grpctest.Response, 1)
-		ctx := stream.Context()
+		log.Debug("Connected")
 
 		go func() {
+			defer cancel()
 			for {
 				log.Debug("Wait response on stream")
 				resp, err := stream.Recv()
-				if err == nil {
+				switch err {
+				case nil:
 					respChan <- resp
 					continue
-				}
-
-				select {
-				case <-ctx.Done():
-					log.Info("Context done, stop receive from stream")
-					close(respChan)
+				case io.EOF:
+					log.Debug("Stream closed, reconnect")
 					return
 				default:
-					if err == io.EOF {
-						log.Info("EOF received on stream, stop")
-						close(respChan)
-						return
-					}
 					switch code := grpc.Code(err); code {
 					case codes.Unauthenticated:
-						log.Fatal("Invalid API key")
+						log.Error("Invalid API key")
+					case codes.Canceled:
+						log.Debug("Cancel, stop reading")
 					default:
 						if closeErr := stream.CloseSend(); err != nil {
 							log.With(zap.NamedError("close_err", closeErr)).Error("Error receive stream message, closed stream", common.GrpcErrorFields(err)...)
 						} else {
 							log.Error("Error receive stream message, closed stream", common.GrpcErrorFields(err)...)
 						}
-						close(respChan)
-						return
 					}
+					return
 				}
 			}
 		}()
@@ -111,30 +111,30 @@ func main() {
 		for {
 			select {
 			case <-ctx.Done():
-				log.Info("Context done, open new stream")
+				log.Info("Context done, stop receive from stream")
 				break selectLoop
 			case t := <-ticker.C:
 				id, err := ulid.New(ulid.Timestamp(t), rand.Reader)
 				if err != nil {
-					log.Fatal("Can't generate ULID", zap.Error(err))
+					log.Error("Can't generate ULID", zap.Error(err))
+					cancel()
+					break selectLoop
 				}
 				req := &grpctest.Request{
 					Value: id.String(),
 				}
 				if err := stream.Send(req); err != nil {
 					log.Error("Can't send interval request", zap.Error(err))
+					cancel()
+					break selectLoop
 				} else {
 					log.Debug("Sent interval request", req.ZapFields()...)
 				}
-			case resp, isOpen := <-respChan:
-				if !isOpen {
-					log.Debug("Channel closed, leave loop")
-					ticker.Stop()
-					break selectLoop
-				}
+			case resp := <-respChan:
 				log.Debug("Received response", resp.ZapFields()...)
 			}
 		}
+
 		time.Sleep(common.ReconnectInterval)
 	}
 }

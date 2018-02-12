@@ -3,13 +3,13 @@ package main
 import (
 	"crypto/rand"
 	"io"
-	"log"
 	"time"
 
 	"github.com/oklog/ulid"
 	"go.uber.org/zap"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 
-	"github.com/bclermont/grpctest/common"
 	grpctest "github.com/bclermont/grpctest/proto"
 )
 
@@ -19,12 +19,11 @@ type server struct {
 }
 
 func (s *server) BiDirectionalStream(stream grpctest.GrpcTest_BiDirectionalStreamServer) error {
-	var (
-		ctx     = stream.Context()
-		reqChan = make(chan *grpctest.Request, 1)
-	)
+	reqChan := make(chan *grpctest.Request, 1)
+	ctx := stream.Context()
 
 	go func() {
+		defer close(reqChan)
 		for {
 			s.log.Debug("Wait request on stream")
 			req, err := stream.Recv()
@@ -33,17 +32,14 @@ func (s *server) BiDirectionalStream(stream grpctest.GrpcTest_BiDirectionalStrea
 				reqChan <- req
 			case io.EOF:
 				s.log.Info("EOF received on stream, stop")
-				close(reqChan)
 				return
 			default:
-				select {
-				case <-ctx.Done():
-					s.log.Info("Context done, stop receive stream")
+				if grpc.Code(err) == codes.Canceled {
+					s.log.Debug("Context cancelled, stop receive stream")
 					return
-				default:
-					s.log.Error("Error receive stream", zap.Error(err))
-					time.Sleep(common.ReconnectInterval)
 				}
+				s.log.Error("Error receive stream", zap.Error(err))
+				return
 			}
 		}
 	}()
@@ -55,20 +51,18 @@ func (s *server) BiDirectionalStream(stream grpctest.GrpcTest_BiDirectionalStrea
 		case t := <-ticker.C:
 			id, err := ulid.New(ulid.Timestamp(t), rand.Reader)
 			if err != nil {
-				log.Fatal("Can't generate ULID", zap.Error(err))
+				return err
 			}
 			resp := &grpctest.Response{
 				Value: id.String(),
 			}
 			if err := stream.Send(resp); err != nil {
-				s.log.Error("Can't send interval response", zap.Error(err))
-			} else {
-				s.log.Debug("Sent interval response", resp.ZapFields()...)
+				return err
 			}
+			s.log.Debug("Sent interval response", resp.ZapFields()...)
 		case <-ctx.Done():
 			s.log.Info("Context done, leaving")
 			ticker.Stop()
-			close(reqChan)
 			return nil
 		case req, isOpen := <-reqChan:
 			if !isOpen {
