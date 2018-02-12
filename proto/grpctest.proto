@@ -1,0 +1,17 @@
+syntax = "proto3";
+
+package grpctest;
+
+option go_package = "github.com/bclermont/grpctest/proto;grpctest";
+
+message Request {
+    string value = 1;
+}
+
+message Response {
+    string value = 1;
+}
+
+service GrpcTest {
+    rpc BiDirectionalStream(stream Request) returns (stream Response);
+}
