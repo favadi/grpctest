@@ -1,9 +1,10 @@
 package common
 
 import (
-	"flag"
+	"fmt"
 	"time"
 
+	"github.com/spf13/viper"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 	"google.golang.org/grpc"
@@ -14,25 +15,35 @@ const (
 	ReconnectInterval time.Duration = time.Second //time.Millisecond * 500
 	IdlePing          time.Duration = time.Second * 10
 	IdlePingTimeout   time.Duration = time.Second * 5
+
+	keyPort          = "port"
+	keyKey           = "key"
+	keyInterval      = "interval"
+	errMissingFormat = "Missing %q"
 )
 
-func Init() (int, string, time.Duration, *zap.Logger) {
-	port := flag.Int("port", 8841, "Port")
-	apiKey := flag.String("key", "", "API Key")
-	sendInterval := flag.Duration("interval", time.Second*15, "Interval between sending messages")
-	flag.Parse()
+func init() {
+	viper.SetDefault(keyInterval, time.Second*15)
+	viper.SetDefault(keyPort, 8841)
+}
+
+func Init() (port int, apiKey string, interval time.Duration, log *zap.Logger) {
+	viper.AutomaticEnv()
+	port = viper.GetInt(keyPort)
+	apiKey = viper.GetString(keyKey)
+	interval = viper.GetDuration(keyInterval)
 
 	log, err := zap.NewDevelopment()
 	if err != nil {
 		panic(err)
 	}
-	if len(*apiKey) == 0 {
-		log.Fatal("Missing '-key'")
+	if len(apiKey) == 0 {
+		log.Fatal(fmt.Sprintf(errMissingFormat, keyKey))
 	}
-	if *port == 0 {
-		log.Fatal("Missing '-port'")
+	if port == 0 {
+		log.Fatal(fmt.Sprintf(errMissingFormat, keyPort))
 	}
-	return *port, *apiKey, *sendInterval, log
+	return
 }
 
 func GrpcErrorFields(err error) []zapcore.Field {

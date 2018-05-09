@@ -81,6 +81,8 @@ const _ = grpc.SupportPackageIsVersion4
 // Client API for GrpcTest service
 
 type GrpcTestClient interface {
+	ClientStream(ctx context.Context, opts ...grpc.CallOption) (GrpcTest_ClientStreamClient, error)
+	ServerStream(ctx context.Context, in *Request, opts ...grpc.CallOption) (GrpcTest_ServerStreamClient, error)
 	BiDirectionalStream(ctx context.Context, opts ...grpc.CallOption) (GrpcTest_BiDirectionalStreamClient, error)
 }
 
@@ -92,8 +94,74 @@ func NewGrpcTestClient(cc *grpc.ClientConn) GrpcTestClient {
 	return &grpcTestClient{cc}
 }
 
+func (c *grpcTestClient) ClientStream(ctx context.Context, opts ...grpc.CallOption) (GrpcTest_ClientStreamClient, error) {
+	stream, err := grpc.NewClientStream(ctx, &_GrpcTest_serviceDesc.Streams[0], c.cc, "/grpctest.GrpcTest/ClientStream", opts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &grpcTestClientStreamClient{stream}
+	return x, nil
+}
+
+type GrpcTest_ClientStreamClient interface {
+	Send(*Request) error
+	CloseAndRecv() (*Response, error)
+	grpc.ClientStream
+}
+
+type grpcTestClientStreamClient struct {
+	grpc.ClientStream
+}
+
+func (x *grpcTestClientStreamClient) Send(m *Request) error {
+	return x.ClientStream.SendMsg(m)
+}
+
+func (x *grpcTestClientStreamClient) CloseAndRecv() (*Response, error) {
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	m := new(Response)
+	if err := x.ClientStream.RecvMsg(m); err != nil {
+		return nil, err
+	}
+	return m, nil
+}
+
+func (c *grpcTestClient) ServerStream(ctx context.Context, in *Request, opts ...grpc.CallOption) (GrpcTest_ServerStreamClient, error) {
+	stream, err := grpc.NewClientStream(ctx, &_GrpcTest_serviceDesc.Streams[1], c.cc, "/grpctest.GrpcTest/ServerStream", opts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &grpcTestServerStreamClient{stream}
+	if err := x.ClientStream.SendMsg(in); err != nil {
+		return nil, err
+	}
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	return x, nil
+}
+
+type GrpcTest_ServerStreamClient interface {
+	Recv() (*Response, error)
+	grpc.ClientStream
+}
+
+type grpcTestServerStreamClient struct {
+	grpc.ClientStream
+}
+
+func (x *grpcTestServerStreamClient) Recv() (*Response, error) {
+	m := new(Response)
+	if err := x.ClientStream.RecvMsg(m); err != nil {
+		return nil, err
+	}
+	return m, nil
+}
+
 func (c *grpcTestClient) BiDirectionalStream(ctx context.Context, opts ...grpc.CallOption) (GrpcTest_BiDirectionalStreamClient, error) {
-	stream, err := grpc.NewClientStream(ctx, &_GrpcTest_serviceDesc.Streams[0], c.cc, "/grpctest.GrpcTest/BiDirectionalStream", opts...)
+	stream, err := grpc.NewClientStream(ctx, &_GrpcTest_serviceDesc.Streams[2], c.cc, "/grpctest.GrpcTest/BiDirectionalStream", opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -126,11 +194,60 @@ func (x *grpcTestBiDirectionalStreamClient) Recv() (*Response, error) {
 // Server API for GrpcTest service
 
 type GrpcTestServer interface {
+	ClientStream(GrpcTest_ClientStreamServer) error
+	ServerStream(*Request, GrpcTest_ServerStreamServer) error
 	BiDirectionalStream(GrpcTest_BiDirectionalStreamServer) error
 }
 
 func RegisterGrpcTestServer(s *grpc.Server, srv GrpcTestServer) {
 	s.RegisterService(&_GrpcTest_serviceDesc, srv)
+}
+
+func _GrpcTest_ClientStream_Handler(srv interface{}, stream grpc.ServerStream) error {
+	return srv.(GrpcTestServer).ClientStream(&grpcTestClientStreamServer{stream})
+}
+
+type GrpcTest_ClientStreamServer interface {
+	SendAndClose(*Response) error
+	Recv() (*Request, error)
+	grpc.ServerStream
+}
+
+type grpcTestClientStreamServer struct {
+	grpc.ServerStream
+}
+
+func (x *grpcTestClientStreamServer) SendAndClose(m *Response) error {
+	return x.ServerStream.SendMsg(m)
+}
+
+func (x *grpcTestClientStreamServer) Recv() (*Request, error) {
+	m := new(Request)
+	if err := x.ServerStream.RecvMsg(m); err != nil {
+		return nil, err
+	}
+	return m, nil
+}
+
+func _GrpcTest_ServerStream_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(Request)
+	if err := stream.RecvMsg(m); err != nil {
+		return err
+	}
+	return srv.(GrpcTestServer).ServerStream(m, &grpcTestServerStreamServer{stream})
+}
+
+type GrpcTest_ServerStreamServer interface {
+	Send(*Response) error
+	grpc.ServerStream
+}
+
+type grpcTestServerStreamServer struct {
+	grpc.ServerStream
+}
+
+func (x *grpcTestServerStreamServer) Send(m *Response) error {
+	return x.ServerStream.SendMsg(m)
 }
 
 func _GrpcTest_BiDirectionalStream_Handler(srv interface{}, stream grpc.ServerStream) error {
@@ -165,6 +282,16 @@ var _GrpcTest_serviceDesc = grpc.ServiceDesc{
 	Methods:     []grpc.MethodDesc{},
 	Streams: []grpc.StreamDesc{
 		{
+			StreamName:    "ClientStream",
+			Handler:       _GrpcTest_ClientStream_Handler,
+			ClientStreams: true,
+		},
+		{
+			StreamName:    "ServerStream",
+			Handler:       _GrpcTest_ServerStream_Handler,
+			ServerStreams: true,
+		},
+		{
 			StreamName:    "BiDirectionalStream",
 			Handler:       _GrpcTest_BiDirectionalStream_Handler,
 			ServerStreams: true,
@@ -177,16 +304,18 @@ var _GrpcTest_serviceDesc = grpc.ServiceDesc{
 func init() { proto.RegisterFile("grpctest.proto", fileDescriptor0) }
 
 var fileDescriptor0 = []byte{
-	// 175 bytes of a gzipped FileDescriptorProto
+	// 201 bytes of a gzipped FileDescriptorProto
 	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0xe2, 0xe2, 0x4b, 0x2f, 0x2a, 0x48,
 	0x2e, 0x49, 0x2d, 0x2e, 0xd1, 0x2b, 0x28, 0xca, 0x2f, 0xc9, 0x17, 0xe2, 0x80, 0xf1, 0x95, 0xe4,
 	0xb9, 0xd8, 0x83, 0x52, 0x0b, 0x4b, 0x53, 0x8b, 0x4b, 0x84, 0x44, 0xb8, 0x58, 0xcb, 0x12, 0x73,
 	0x4a, 0x53, 0x25, 0x18, 0x15, 0x18, 0x35, 0x38, 0x83, 0x20, 0x1c, 0x25, 0x05, 0x2e, 0x8e, 0xa0,
-	0xd4, 0xe2, 0x82, 0xfc, 0xbc, 0xe2, 0x54, 0xec, 0x2a, 0x8c, 0x7c, 0xb8, 0x38, 0xdc, 0x8b, 0x0a,
-	0x92, 0x43, 0x40, 0x66, 0x38, 0x70, 0x09, 0x3b, 0x65, 0xba, 0x64, 0x16, 0xa5, 0x26, 0x97, 0x64,
-	0xe6, 0xe7, 0x25, 0xe6, 0x04, 0x97, 0x14, 0xa5, 0x26, 0xe6, 0x0a, 0x09, 0xea, 0xc1, 0x1d, 0x00,
-	0xb5, 0x4d, 0x4a, 0x08, 0x59, 0x08, 0x62, 0xbe, 0x06, 0xa3, 0x01, 0xa3, 0x93, 0x5e, 0x94, 0x4e,
-	0x7a, 0x66, 0x49, 0x46, 0x69, 0x92, 0x5e, 0x72, 0x7e, 0xae, 0x7e, 0x52, 0x72, 0x4e, 0x6a, 0x51,
-	0x6e, 0x7e, 0x5e, 0x89, 0x3e, 0x4c, 0xb5, 0x3e, 0xd8, 0x07, 0xd6, 0x30, 0x6e, 0x12, 0x1b, 0x98,
-	0x6f, 0x0c, 0x08, 0x00, 0x00, 0xff, 0xff, 0x51, 0xea, 0xec, 0x11, 0xe3, 0x00, 0x00, 0x00,
+	0xd4, 0xe2, 0x82, 0xfc, 0xbc, 0xe2, 0x54, 0xec, 0x2a, 0x8c, 0xf6, 0x31, 0x72, 0x71, 0xb8, 0x17,
+	0x15, 0x24, 0x87, 0x80, 0x0c, 0x31, 0xe7, 0xe2, 0x71, 0xce, 0xc9, 0x4c, 0xcd, 0x2b, 0x09, 0x2e,
+	0x29, 0x4a, 0x4d, 0xcc, 0x15, 0x12, 0xd4, 0x83, 0x5b, 0x0d, 0xb5, 0x47, 0x4a, 0x08, 0x59, 0x08,
+	0x62, 0xb2, 0x06, 0x23, 0x48, 0x63, 0x70, 0x6a, 0x51, 0x59, 0x6a, 0x11, 0x49, 0x1a, 0x0d, 0x18,
+	0x85, 0x1c, 0xb8, 0x84, 0x9d, 0x32, 0x5d, 0x32, 0x8b, 0x52, 0x93, 0x4b, 0x32, 0xf3, 0xf3, 0x12,
+	0x73, 0x48, 0xb4, 0xd8, 0x80, 0xd1, 0x49, 0x2f, 0x4a, 0x27, 0x3d, 0xb3, 0x24, 0xa3, 0x34, 0x49,
+	0x2f, 0x39, 0x3f, 0x57, 0x3f, 0x29, 0x39, 0x27, 0xb5, 0x28, 0x37, 0x3f, 0xaf, 0x44, 0x1f, 0xa6,
+	0x5a, 0x1f, 0x1c, 0x68, 0xd6, 0x30, 0x6e, 0x12, 0x1b, 0x98, 0x6f, 0x0c, 0x08, 0x00, 0x00, 0xff,
+	0xff, 0xbc, 0x76, 0x03, 0x52, 0x56, 0x01, 0x00, 0x00,
 }

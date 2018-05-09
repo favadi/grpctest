@@ -13,5 +13,7 @@ message Response {
 }
 
 service GrpcTest {
+    rpc ClientStream(stream Request) returns (Response);
+    rpc ServerStream(Request) returns (stream Response);
     rpc BiDirectionalStream(stream Request) returns (stream Response);
 }
