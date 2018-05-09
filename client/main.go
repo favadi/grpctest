@@ -80,6 +80,7 @@ func main() {
 	rootCmd.AddCommand(bidiCommand())
 	rootCmd.AddCommand(clientCommand())
 	rootCmd.AddCommand(serverCommand())
+	rootCmd.AddCommand(unaryCommand())
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Println(err.Error())
 		os.Exit(1)
