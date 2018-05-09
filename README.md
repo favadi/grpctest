@@ -33,3 +33,9 @@ go build -o client github.com/bclermont/grpctest/client
 ```
 ./client client
 ```
+
+## Client unary
+
+```
+./client unary
+```
